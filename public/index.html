@@ -1,0 +1,342 @@
+import { useState, useRef, useEffect } from "react";
+import Head from "next/head";
+
+const QUICK_PROMPTS = [
+  { emoji: "⚡", label: "Tumhari abilities kya hain?", msg: "Mujhe apni abilities ke baare mein batao" },
+  { emoji: "💼", label: "Business idea improve karo", msg: "Mera business idea improve karne mein help karo" },
+  { emoji: "🔥", label: "Motivate karo mujhe", msg: "Mujhe ek powerful motivational message do" },
+  { emoji: "💻", label: "Coding seekhna chahta hoon", msg: "Python mein beginner ke liye kya seekhna chahiye?" },
+];
+
+export default function Home() {
+  const [messages, setMessages] = useState([]);
+  const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [history, setHistory] = useState([]);
+  const [ctxMenu, setCtxMenu] = useState({ visible: false, x: 0, y: 0, text: "" });
+  const bottomRef = useRef(null);
+  const textareaRef = useRef(null);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, loading]);
+
+  const autoResize = () => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = Math.min(el.scrollHeight, 140) + "px";
+  };
+
+  const sendMessage = async (text) => {
+    const msg = text || input.trim();
+    if (!msg || loading) return;
+    setInput("");
+    if (textareaRef.current) textareaRef.current.style.height = "auto";
+
+    const userMsg = { role: "user", content: msg };
+    setMessages((prev) => [...prev, { type: "user", text: msg }]);
+    setLoading(true);
+
+    const newHistory = [...history, userMsg];
+
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: msg, history }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) throw new Error(data.error || "Server error");
+
+      const reply = data.reply;
+      setMessages((prev) => [...prev, { type: "ai", text: reply }]);
+      setHistory([...newHistory, { role: "assistant", content: reply }].slice(-30));
+    } catch (err) {
+      setMessages((prev) => [
+        ...prev,
+        { type: "ai", text: "⚠️ Error: " + err.message + ". Dobara try karo." },
+      ]);
+    }
+
+    setLoading(false);
+  };
+
+  const handleKey = (e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage();
+    }
+  };
+
+  const clearChat = () => {
+    if (confirm("Chat clear karein?")) {
+      setMessages([]);
+      setHistory([]);
+    }
+  };
+
+  const showCtx = (e, text) => {
+    e.preventDefault();
+    setCtxMenu({ visible: true, x: e.clientX, y: e.clientY, text });
+  };
+
+  const copyText = () => {
+    navigator.clipboard.writeText(ctxMenu.text);
+    setCtxMenu((c) => ({ ...c, visible: false }));
+  };
+
+  return (
+    <>
+      <Head>
+        <title>Vision — AI Companion</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <link
+          href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+          rel="stylesheet"
+        />
+      </Head>
+
+      <div onClick={() => setCtxMenu((c) => ({ ...c, visible: false }))} style={{ height: "100vh" }}>
+        {/* Context Menu */}
+        {ctxMenu.visible && (
+          <div style={{
+            position: "fixed", left: ctxMenu.x, top: ctxMenu.y,
+            background: "#131928", border: "1px solid #1e2640",
+            borderRadius: 10, zIndex: 1000, minWidth: 150,
+            boxShadow: "0 8px 32px rgba(0,0,0,0.5)", overflow: "hidden"
+          }}>
+            <div onClick={copyText} style={ctxStyle}>📋 Copy</div>
+          </div>
+        )}
+
+        <div style={styles.app}>
+          {/* Header */}
+          <header style={styles.header}>
+            <div style={{ position: "relative", flexShrink: 0 }}>
+              <div style={styles.avatar}>👁️</div>
+              <div style={styles.onlineDot} />
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={styles.h1}>VISION</div>
+              <div style={styles.sub}>Your intelligent companion — always by your side</div>
+            </div>
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <span style={styles.badge}>{history.length} msgs</span>
+              <button onClick={clearChat} style={styles.clearBtn}>Clear</button>
+            </div>
+          </header>
+
+          {/* Messages */}
+          <div style={styles.messages}>
+            {messages.length === 0 && (
+              <div style={styles.welcome}>
+                <div style={styles.welcomeIcon}>👁️</div>
+                <div style={styles.welcomeTitle}>I am Vision</div>
+                <div style={styles.welcomeSub}>
+                  Your loyal friend, wise mentor, and intelligent companion.<br />
+                  Ask me anything — in Urdu, English, or Roman Urdu.
+                </div>
+                <div style={styles.quickGrid}>
+                  {QUICK_PROMPTS.map((q, i) => (
+                    <button key={i} onClick={() => sendMessage(q.msg)} style={styles.qbtn}>
+                      <span style={{ fontSize: 18, display: "block", marginBottom: 4 }}>{q.emoji}</span>
+                      {q.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {messages.map((m, i) => (
+              <div key={i} style={{ ...styles.row, flexDirection: m.type === "user" ? "row-reverse" : "row" }}>
+                <div style={{
+                  ...styles.msgAvatar,
+                  background: m.type === "user"
+                    ? "linear-gradient(135deg,#4f8ef7,#7c6ff7)"
+                    : "linear-gradient(135deg,#1a2a6c,#4f8ef7)"
+                }}>
+                  {m.type === "user" ? "😊" : "👁️"}
+                </div>
+                <div
+                  onContextMenu={(e) => showCtx(e, m.text)}
+                  style={{
+                    ...styles.bubble,
+                    background: m.type === "user" ? "#0f1d3a" : "#0a0f1e",
+                    border: m.type === "user"
+                      ? "1px solid rgba(79,142,247,0.2)"
+                      : "1px solid rgba(124,111,247,0.15)",
+                    borderTopRightRadius: m.type === "user" ? 4 : 16,
+                    borderTopLeftRadius: m.type === "ai" ? 4 : 16,
+                  }}
+                >
+                  {m.text.split("\n").map((line, j) => (
+                    <span key={j}>{line}{j < m.text.split("\n").length - 1 && <br />}</span>
+                  ))}
+                </div>
+              </div>
+            ))}
+
+            {loading && (
+              <div style={{ ...styles.row, flexDirection: "row" }}>
+                <div style={{ ...styles.msgAvatar, background: "linear-gradient(135deg,#1a2a6c,#4f8ef7)" }}>👁️</div>
+                <div style={{ ...styles.bubble, background: "#0a0f1e", border: "1px solid rgba(124,111,247,0.15)", borderTopLeftRadius: 4 }}>
+                  <div style={styles.dots}>
+                    <span style={styles.dot} />
+                    <span style={{ ...styles.dot, animationDelay: "0.2s" }} />
+                    <span style={{ ...styles.dot, animationDelay: "0.4s" }} />
+                  </div>
+                </div>
+              </div>
+            )}
+            <div ref={bottomRef} />
+          </div>
+
+          {/* Input */}
+          <div style={styles.inputArea}>
+            <div style={styles.inputBox}>
+              <textarea
+                ref={textareaRef}
+                value={input}
+                onChange={(e) => { setInput(e.target.value); autoResize(); }}
+                onKeyDown={handleKey}
+                placeholder="Vision se kuch poochho..."
+                rows={1}
+                style={styles.textarea}
+              />
+              <button onClick={() => sendMessage()} disabled={loading || !input.trim()} style={styles.sendBtn}>
+                ➤
+              </button>
+            </div>
+            <div style={styles.hint}>Enter = Send &nbsp;|&nbsp; Shift+Enter = New line</div>
+          </div>
+        </div>
+      </div>
+
+      <style>{`
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { background: #06080f; font-family: 'Sora', sans-serif; overflow: hidden; }
+        textarea::-webkit-scrollbar { display: none; }
+        @keyframes bob {
+          0%,80%,100% { transform: scale(0.6); opacity: 0.4; }
+          40% { transform: scale(1); opacity: 1; }
+        }
+        @keyframes pulse {
+          0%,100% { opacity:1; } 50% { opacity:0.5; }
+        }
+      `}</style>
+    </>
+  );
+}
+
+const ctxStyle = {
+  padding: "11px 16px", cursor: "pointer", fontSize: 13,
+  color: "#dde3f5", display: "flex", gap: 8, alignItems: "center",
+};
+
+const styles = {
+  app: {
+    maxWidth: 860, margin: "0 auto", height: "100vh",
+    display: "flex", flexDirection: "column", padding: "0 16px",
+    position: "relative",
+  },
+  header: {
+    display: "flex", alignItems: "center", gap: 14,
+    padding: "18px 0 14px", borderBottom: "1px solid #1e2640",
+  },
+  avatar: {
+    width: 44, height: 44, borderRadius: 12,
+    background: "linear-gradient(135deg,#1a2a6c,#4f8ef7,#7c6ff7)",
+    display: "flex", alignItems: "center", justifyContent: "center",
+    fontSize: 20, boxShadow: "0 0 24px rgba(79,142,247,0.3)",
+  },
+  onlineDot: {
+    position: "absolute", bottom: -2, right: -2,
+    width: 12, height: 12, background: "#22c55e",
+    borderRadius: "50%", border: "2px solid #06080f",
+    boxShadow: "0 0 8px #22c55e", animation: "pulse 2s infinite",
+  },
+  h1: {
+    fontSize: 17, fontWeight: 700, letterSpacing: "0.08em",
+    background: "linear-gradient(90deg,#4f8ef7,#7c6ff7)",
+    WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent",
+  },
+  sub: { fontSize: 11, color: "#5a6380", marginTop: 2, fontFamily: "'JetBrains Mono', monospace" },
+  badge: {
+    fontSize: 11, fontFamily: "'JetBrains Mono', monospace",
+    color: "#5a6380", background: "#131928", border: "1px solid #1e2640",
+    padding: "4px 10px", borderRadius: 20,
+  },
+  clearBtn: {
+    background: "none", border: "1px solid #1e2640", color: "#5a6380",
+    fontSize: 12, padding: "4px 12px", borderRadius: 8,
+    cursor: "pointer", fontFamily: "inherit",
+  },
+  messages: {
+    flex: 1, overflowY: "auto", padding: "24px 0",
+    display: "flex", flexDirection: "column", gap: 22,
+  },
+  welcome: { margin: "auto", textAlign: "center" },
+  welcomeIcon: {
+    width: 72, height: 72, margin: "0 auto 20px",
+    background: "linear-gradient(135deg,#1a2a6c,#4f8ef7,#7c6ff7)",
+    borderRadius: 20, display: "flex", alignItems: "center",
+    justifyContent: "center", fontSize: 32,
+    boxShadow: "0 0 40px rgba(79,142,247,0.25)",
+  },
+  welcomeTitle: {
+    fontSize: 26, fontWeight: 700, marginBottom: 10,
+    background: "linear-gradient(90deg,#e8edf8,#7c6ff7)",
+    WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent",
+  },
+  welcomeSub: { fontSize: 13, color: "#5a6380", lineHeight: 1.75, marginBottom: 28 },
+  quickGrid: {
+    display: "grid", gridTemplateColumns: "1fr 1fr",
+    gap: 8, maxWidth: 440, margin: "0 auto",
+  },
+  qbtn: {
+    background: "#131928", border: "1px solid #1e2640", color: "#5a6380",
+    padding: "10px 14px", borderRadius: 10, fontSize: 12,
+    fontFamily: "inherit", cursor: "pointer", textAlign: "left", lineHeight: 1.4,
+  },
+  row: { display: "flex", gap: 12 },
+  msgAvatar: {
+    width: 34, height: 34, borderRadius: 9, flexShrink: 0,
+    display: "flex", alignItems: "center", justifyContent: "center",
+    fontSize: 15, marginTop: 2,
+  },
+  bubble: {
+    maxWidth: "72%", padding: "13px 17px", borderRadius: 16,
+    fontSize: 13.5, lineHeight: 1.8, color: "#dde3f5",
+    wordBreak: "break-word", cursor: "pointer",
+  },
+  dots: { display: "flex", gap: 5, padding: "4px 0" },
+  dot: {
+    width: 7, height: 7, borderRadius: "50%", background: "#7c6ff7",
+    display: "inline-block", animation: "bob 1.4s infinite",
+  },
+  inputArea: { padding: "14px 0 18px", borderTop: "1px solid #1e2640" },
+  inputBox: {
+    display: "flex", gap: 10, alignItems: "flex-end",
+    background: "#0d111e", border: "1px solid #1e2640",
+    borderRadius: 14, padding: "10px 12px",
+  },
+  textarea: {
+    flex: 1, background: "none", border: "none", outline: "none",
+    color: "#dde3f5", fontFamily: "inherit", fontSize: 13.5,
+    lineHeight: 1.6, resize: "none", maxHeight: 140,
+  },
+  sendBtn: {
+    width: 38, height: 38, borderRadius: 10,
+    background: "linear-gradient(135deg,#4f8ef7,#7c6ff7)",
+    border: "none", cursor: "pointer", fontSize: 17, flexShrink: 0,
+    color: "white",
+  },
+  hint: {
+    textAlign: "center", fontSize: 10.5, color: "#5a6380",
+    marginTop: 9, fontFamily: "'JetBrains Mono', monospace",
+  },
+};
+      
